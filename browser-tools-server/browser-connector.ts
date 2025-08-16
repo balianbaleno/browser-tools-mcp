@@ -460,6 +460,14 @@ app.post("/extension-log", (req, res) => {
       });
       selectedElement = data.element;
       break;
+    case "selected-element-styles-only":
+      console.log("Updating selected element styles only:", {
+        tagName: data.elementStyles?.elementIdentifier?.tagName,
+        id: data.elementStyles?.elementIdentifier?.id,
+        className: data.elementStyles?.elementIdentifier?.className,
+      });
+      selectedElement = data.elementStyles;
+      break;
     default:
       console.log("Unknown log type:", data.type);
   }
@@ -518,6 +526,10 @@ app.get("/selected-element", (req, res) => {
 
 app.get("/selected-element-with-styles", (req, res) => {
   res.json(selectedElement || { message: "No element selected" });
+});
+
+app.get("/selected-element-styles-only", (req, res) => {
+  res.json(selectedElement || { message: "No element styles available" });
 });
 
 app.get("/.port", (req, res) => {
@@ -611,16 +623,7 @@ interface ScreenshotMessage {
   autoPaste?: boolean;
 }
 
-app.post("/trigger-capture-with-styles", (req, res) => {
-  if (browserConnector.hasActiveConnection()) {
-    (browserConnector as any).activeConnection.send(
-      JSON.stringify({ type: "get-selected-element-with-styles" })
-    );
-    res.json({ status: "ok", message: "Capture triggered" });
-  } else {
-    res.status(503).json({ error: "Chrome extension not connected" });
-  }
-});
+
 
 export class BrowserConnector {
   private wss: WebSocketServer;
@@ -666,6 +669,9 @@ export class BrowserConnector {
 
     // Set up Best Practices audit endpoint
     this.setupBestPracticesAudit();
+
+    // Set up trigger endpoints for element capture
+    this.setupElementCaptureEndpoints();
 
     // Handle upgrade requests for WebSocket
     this.server.on(
@@ -1347,6 +1353,31 @@ export class BrowserConnector {
       "/best-practices-audit",
       runBestPracticesAudit
     );
+  }
+
+  // Set up endpoints for element capture triggers
+  private setupElementCaptureEndpoints() {
+    this.app.post("/trigger-capture-with-styles", (req, res) => {
+      if (this.hasActiveConnection()) {
+        this.activeConnection!.send(
+          JSON.stringify({ type: "get-selected-element-with-styles" })
+        );
+        res.json({ status: "ok", message: "Capture triggered" });
+      } else {
+        res.status(503).json({ error: "Chrome extension not connected" });
+      }
+    });
+
+    this.app.post("/trigger-capture-styles-only", (req, res) => {
+      if (this.hasActiveConnection()) {
+        this.activeConnection!.send(
+          JSON.stringify({ type: "get-selected-element-styles-only" })
+        );
+        res.json({ status: "ok", message: "Styles capture triggered" });
+      } else {
+        res.status(503).json({ error: "Chrome extension not connected" });
+      }
+    });
   }
 
   /**

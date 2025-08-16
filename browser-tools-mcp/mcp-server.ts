@@ -330,11 +330,41 @@ server.tool(
 
 server.tool(
   "getSelectedElement",
-  "Get the selected element from the browser",
+  "Get the selected element from the browser (now includes computed styles and CSS rules)",
   async () => {
     return await withServerConnection(async () => {
       const response = await fetch(
         `http://${discoveredHost}:${discoveredPort}/selected-element`
+      );
+      const json = await response.json();
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(json, null, 2),
+          },
+        ],
+      };
+    });
+  }
+);
+
+server.tool(
+  "getSelectedElementStyles",
+  "Get only the computed styles and CSS rules for the selected element",
+  async () => {
+    return await withServerConnection(async () => {
+      // First, trigger the capture of the element styles only
+      await fetch(
+        `http://${discoveredHost}:${discoveredPort}/trigger-capture-styles-only`,
+        {
+          method: "POST",
+        }
+      );
+
+      // Then, fetch the captured styles data
+      const response = await fetch(
+        `http://${discoveredHost}:${discoveredPort}/selected-element-styles-only`
       );
       const json = await response.json();
       return {

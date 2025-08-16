@@ -686,7 +686,7 @@ window.addEventListener("unload", () => {
   }
 });
 
-// Function to capture and send element data
+// Function to capture and send element data (enhanced with computed styles)
 function captureAndSendElement() {
   chrome.devtools.inspectedWindow.eval(
     `(function() {
@@ -694,6 +694,58 @@ function captureAndSendElement() {
       if (!el) return null;
 
       const rect = el.getBoundingClientRect();
+
+      // Get computed styles for enhanced debugging
+      const computedStyles = {};
+      const styles = window.getComputedStyle(el);
+      for (let i = 0; i < styles.length; i++) {
+        const prop = styles[i];
+        computedStyles[prop] = styles.getPropertyValue(prop);
+      }
+
+      // Get CSS rules that apply to this element (optional enhancement)
+      const appliedRules = [];
+      try {
+        const sheets = Array.from(document.styleSheets);
+        for (const sheet of sheets) {
+          try {
+            const rules = Array.from(sheet.cssRules || sheet.rules || []);
+            for (const rule of rules) {
+              if (rule.style && el.matches && el.matches(rule.selectorText)) {
+                appliedRules.push({
+                  selector: rule.selectorText,
+                  cssText: rule.cssText,
+                  specificity: getSpecificity(rule.selectorText)
+                });
+              }
+            }
+          } catch (e) {
+            // Skip stylesheets that can't be accessed (CORS)
+          }
+        }
+      } catch (e) {
+        console.warn("Could not extract CSS rules:", e);
+      }
+
+      // Helper function to calculate CSS specificity
+      function getSpecificity(selector) {
+        try {
+          let ids = (selector.match(/#[a-z0-9_-]+/gi) || []).length;
+          let classes = (selector.match(/\\.[a-z0-9_-]+/gi) || []).length;
+          let attributes = (selector.match(/\\[[^\\]]+\\]/gi) || []).length;
+          let pseudoClasses = (selector.match(/:[a-z0-9_-]+/gi) || []).length;
+          let elements = (selector.match(/^[a-z0-9]+|\\s+[a-z0-9]+/gi) || []).length;
+          
+          return {
+            ids: ids,
+            classes: classes + attributes + pseudoClasses,
+            elements: elements,
+            total: ids * 100 + (classes + attributes + pseudoClasses) * 10 + elements
+          };
+        } catch (e) {
+          return { ids: 0, classes: 0, elements: 0, total: 0 };
+        }
+      }
 
       return {
         tagName: el.tagName,
@@ -710,13 +762,15 @@ function captureAndSendElement() {
           top: rect.top,
           left: rect.left
         },
-        innerHTML: el.innerHTML
+        innerHTML: el.innerHTML,
+        computedStyles: computedStyles,
+        appliedCSSRules: appliedRules.slice(0, 20) // Limit to first 20 rules to avoid overwhelming output
       };
     })()`,
     (result, isException) => {
       if (isException || !result) return;
 
-      console.log("Element selected:", result);
+      console.log("Element selected (with styles):", result);
 
       // Send to browser connector
       sendToBrowserConnector({
@@ -773,6 +827,106 @@ function captureAndSendElementWithStyles() {
         type: "selected-element-with-styles",
         timestamp: Date.now(),
         element: result,
+      });
+    }
+  );
+}
+
+// Function to capture and send only the styles of selected element
+function captureAndSendElementStylesOnly() {
+  chrome.devtools.inspectedWindow.eval(
+    `(function() {
+      const el = $0;  // $0 is the currently selected element in DevTools
+      if (!el) return null;
+
+      // Get computed styles
+      const computedStyles = {};
+      const styles = window.getComputedStyle(el);
+      for (let i = 0; i < styles.length; i++) {
+        const prop = styles[i];
+        computedStyles[prop] = styles.getPropertyValue(prop);
+      }
+
+      // Get CSS rules that apply to this element
+      const appliedRules = [];
+      try {
+        const sheets = Array.from(document.styleSheets);
+        for (const sheet of sheets) {
+          try {
+            const rules = Array.from(sheet.cssRules || sheet.rules || []);
+            for (const rule of rules) {
+              if (rule.style && el.matches && el.matches(rule.selectorText)) {
+                appliedRules.push({
+                  selector: rule.selectorText,
+                  cssText: rule.cssText,
+                  specificity: getSpecificity(rule.selectorText),
+                  source: sheet.href || 'inline'
+                });
+              }
+            }
+          } catch (e) {
+            // Skip stylesheets that can't be accessed (CORS)
+          }
+        }
+      } catch (e) {
+        console.warn("Could not extract CSS rules:", e);
+      }
+
+      // Helper function to calculate CSS specificity
+      function getSpecificity(selector) {
+        try {
+          let ids = (selector.match(/#[a-z0-9_-]+/gi) || []).length;
+          let classes = (selector.match(/\\.[a-z0-9_-]+/gi) || []).length;
+          let attributes = (selector.match(/\\[[^\\]]+\\]/gi) || []).length;
+          let pseudoClasses = (selector.match(/:[a-z0-9_-]+/gi) || []).length;
+          let elements = (selector.match(/^[a-z0-9]+|\\s+[a-z0-9]+/gi) || []).length;
+          
+          return {
+            ids: ids,
+            classes: classes + attributes + pseudoClasses,
+            elements: elements,
+            total: ids * 100 + (classes + attributes + pseudoClasses) * 10 + elements
+          };
+        } catch (e) {
+          return { ids: 0, classes: 0, elements: 0, total: 0 };
+        }
+      }
+
+      // Get inline styles
+      const inlineStyles = {};
+      if (el.style) {
+        for (let i = 0; i < el.style.length; i++) {
+          const prop = el.style[i];
+          inlineStyles[prop] = el.style.getPropertyValue(prop);
+        }
+      }
+
+      return {
+        elementIdentifier: {
+          tagName: el.tagName,
+          id: el.id,
+          className: el.className
+        },
+        computedStyles: computedStyles,
+        inlineStyles: inlineStyles,
+        appliedCSSRules: appliedRules.sort((a, b) => b.specificity.total - a.specificity.total), // Sort by specificity
+        stylesSummary: {
+          totalComputedProperties: Object.keys(computedStyles).length,
+          totalInlineProperties: Object.keys(inlineStyles).length,
+          totalAppliedRules: appliedRules.length
+        }
+      };
+    })()`,
+    (result, isException) => {
+      if (isException || !result) return;
+
+      console.log("Element styles captured:", result);
+
+      // Send to browser connector
+      sendToBrowserConnector({
+        type: "selected-element-styles-only",
+        timestamp: Date.now(),
+        elementStyles: result,
       });
     }
   );
@@ -1055,6 +1209,9 @@ async function setupWebSocket() {
         } else if (message.type === "get-selected-element-with-styles") {
           console.log("Chrome Extension: Received request for selected element with styles");
           captureAndSendElementWithStyles();
+        } else if (message.type === "get-selected-element-styles-only") {
+          console.log("Chrome Extension: Received request for selected element styles only");
+          captureAndSendElementStylesOnly();
         } else if (message.type === "get-current-url") {
           console.log("Chrome Extension: Received request for current URL");
 
