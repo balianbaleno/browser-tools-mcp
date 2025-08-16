@@ -710,7 +710,7 @@ function captureAndSendElement() {
           top: rect.top,
           left: rect.left
         },
-        innerHTML: el.innerHTML.substring(0, 500)
+        innerHTML: el.innerHTML
       };
     })()`,
     (result, isException) => {
@@ -721,6 +721,56 @@ function captureAndSendElement() {
       // Send to browser connector
       sendToBrowserConnector({
         type: "selected-element",
+        timestamp: Date.now(),
+        element: result,
+      });
+    }
+  );
+}
+
+// Function to capture and send element data with styles
+function captureAndSendElementWithStyles() {
+  chrome.devtools.inspectedWindow.eval(
+    `(function() {
+      const el = $0;  // $0 is the currently selected element in DevTools
+      if (!el) return null;
+
+      const rect = el.getBoundingClientRect();
+
+      const computedStyles = {};
+      const styles = window.getComputedStyle(el);
+      for (let i = 0; i < styles.length; i++) {
+        const prop = styles[i];
+        computedStyles[prop] = styles.getPropertyValue(prop);
+      }
+
+      return {
+        tagName: el.tagName,
+        id: el.id,
+        className: el.className,
+        textContent: el.textContent?.substring(0, 100),
+        attributes: Array.from(el.attributes).map(attr => ({
+          name: attr.name,
+          value: attr.value
+        })),
+        dimensions: {
+          width: rect.width,
+          height: rect.height,
+          top: rect.top,
+          left: rect.left
+        },
+        innerHTML: el.innerHTML,
+        computedStyles: computedStyles
+      };
+    })()`,
+    (result, isException) => {
+      if (isException || !result) return;
+
+      console.log("Element with styles selected:", result);
+
+      // Send to browser connector
+      sendToBrowserConnector({
+        type: "selected-element-with-styles",
         timestamp: Date.now(),
         element: result,
       });
@@ -1002,6 +1052,9 @@ async function setupWebSocket() {
 
             ws.send(JSON.stringify(response));
           });
+        } else if (message.type === "get-selected-element-with-styles") {
+          console.log("Chrome Extension: Received request for selected element with styles");
+          captureAndSendElementWithStyles();
         } else if (message.type === "get-current-url") {
           console.log("Chrome Extension: Received request for current URL");
 

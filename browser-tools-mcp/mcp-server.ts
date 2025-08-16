@@ -213,6 +213,36 @@ server.tool(
   }
 );
 
+server.tool(
+  "getSelectedElementWithStyles",
+  "Get the selected element from the browser with computed styles",
+  async () => {
+    return await withServerConnection(async () => {
+      // First, trigger the capture of the element with styles
+      await fetch(
+        `http://${discoveredHost}:${discoveredPort}/trigger-capture-with-styles`,
+        {
+          method: "POST",
+        }
+      );
+
+      // Then, fetch the captured data
+      const response = await fetch(
+        `http://${discoveredHost}:${discoveredPort}/selected-element-with-styles`
+      );
+      const json = await response.json();
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(json, null, 2),
+          },
+        ],
+      };
+    });
+  }
+);
+
 server.tool("getNetworkErrors", "Check our network ERROR logs", async () => {
   return await withServerConnection(async () => {
     const response = await fetch(

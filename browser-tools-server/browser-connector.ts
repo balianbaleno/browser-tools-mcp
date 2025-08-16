@@ -452,6 +452,14 @@ app.post("/extension-log", (req, res) => {
       });
       selectedElement = data.element;
       break;
+    case "selected-element-with-styles":
+      console.log("Updating selected element with styles:", {
+        tagName: data.element?.tagName,
+        id: data.element?.id,
+        className: data.element?.className,
+      });
+      selectedElement = data.element;
+      break;
     default:
       console.log("Unknown log type:", data.type);
   }
@@ -505,6 +513,10 @@ app.post("/selected-element", (req, res) => {
 });
 
 app.get("/selected-element", (req, res) => {
+  res.json(selectedElement || { message: "No element selected" });
+});
+
+app.get("/selected-element-with-styles", (req, res) => {
   res.json(selectedElement || { message: "No element selected" });
 });
 
@@ -598,6 +610,17 @@ interface ScreenshotMessage {
   error?: string;
   autoPaste?: boolean;
 }
+
+app.post("/trigger-capture-with-styles", (req, res) => {
+  if (browserConnector.hasActiveConnection()) {
+    (browserConnector as any).activeConnection.send(
+      JSON.stringify({ type: "get-selected-element-with-styles" })
+    );
+    res.json({ status: "ok", message: "Capture triggered" });
+  } else {
+    res.status(503).json({ error: "Chrome extension not connected" });
+  }
+});
 
 export class BrowserConnector {
   private wss: WebSocketServer;
