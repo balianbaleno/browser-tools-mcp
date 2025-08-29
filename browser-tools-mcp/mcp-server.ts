@@ -379,6 +379,36 @@ server.tool(
   }
 );
 
+server.tool(
+  "getSelectedElementWithChildrenStyles",
+  "Get the selected element and all its children with computed styles and CSS rules - perfect for analyzing component hierarchies",
+  async () => {
+    return await withServerConnection(async () => {
+      // First, trigger the capture of the element with children styles
+      await fetch(
+        `http://${discoveredHost}:${discoveredPort}/trigger-capture-with-children-styles`,
+        {
+          method: "POST",
+        }
+      );
+
+      // Then, fetch the captured data
+      const response = await fetch(
+        `http://${discoveredHost}:${discoveredPort}/selected-element-with-children-styles`
+      );
+      const json = await response.json();
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(json, null, 2),
+          },
+        ],
+      };
+    });
+  }
+);
+
 server.tool("wipeLogs", "Wipe all browser logs from memory", async () => {
   return await withServerConnection(async () => {
     const response = await fetch(

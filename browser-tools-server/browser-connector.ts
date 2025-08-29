@@ -468,6 +468,14 @@ app.post("/extension-log", (req, res) => {
       });
       selectedElement = data.elementStyles;
       break;
+    case "selected-element-with-children-styles":
+      console.log("Updating selected element with children styles:", {
+        selectedElement: data.elementWithChildren?.selectedElement?.tagName,
+        childrenCount: data.elementWithChildren?.children?.length,
+        totalChildren: data.elementWithChildren?.summary?.totalChildren,
+      });
+      selectedElement = data.elementWithChildren;
+      break;
     default:
       console.log("Unknown log type:", data.type);
   }
@@ -530,6 +538,10 @@ app.get("/selected-element-with-styles", (req, res) => {
 
 app.get("/selected-element-styles-only", (req, res) => {
   res.json(selectedElement || { message: "No element styles available" });
+});
+
+app.get("/selected-element-with-children-styles", (req, res) => {
+  res.json(selectedElement || { message: "No element with children styles available" });
 });
 
 app.get("/.port", (req, res) => {
@@ -1374,6 +1386,17 @@ export class BrowserConnector {
           JSON.stringify({ type: "get-selected-element-styles-only" })
         );
         res.json({ status: "ok", message: "Styles capture triggered" });
+      } else {
+        res.status(503).json({ error: "Chrome extension not connected" });
+      }
+    });
+
+    this.app.post("/trigger-capture-with-children-styles", (req, res) => {
+      if (this.hasActiveConnection()) {
+        this.activeConnection!.send(
+          JSON.stringify({ type: "get-selected-element-with-children-styles" })
+        );
+        res.json({ status: "ok", message: "Children styles capture triggered" });
       } else {
         res.status(503).json({ error: "Chrome extension not connected" });
       }

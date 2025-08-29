@@ -932,6 +932,178 @@ function captureAndSendElementStylesOnly() {
   );
 }
 
+// Function to capture and send element data with children styles
+function captureAndSendElementWithChildrenStyles() {
+  chrome.devtools.inspectedWindow.eval(
+    `(function() {
+      const el = $0;  // $0 is the currently selected element in DevTools
+      if (!el) return null;
+
+      // Helper function to get element styles
+      function getElementStyles(element) {
+        const rect = element.getBoundingClientRect();
+        
+        // Get computed styles
+        const computedStyles = {};
+        const styles = window.getComputedStyle(element);
+        for (let i = 0; i < styles.length; i++) {
+          const prop = styles[i];
+          computedStyles[prop] = styles.getPropertyValue(prop);
+        }
+
+        // Get CSS rules that apply to this element
+        const appliedRules = [];
+        try {
+          const sheets = Array.from(document.styleSheets);
+          for (const sheet of sheets) {
+            try {
+              const rules = Array.from(sheet.cssRules || sheet.rules || []);
+              for (const rule of rules) {
+                if (rule.style && element.matches && element.matches(rule.selectorText)) {
+                  appliedRules.push({
+                    selector: rule.selectorText,
+                    cssText: rule.cssText,
+                    specificity: getSpecificity(rule.selectorText),
+                    source: sheet.href || 'inline'
+                  });
+                }
+              }
+            } catch (e) {
+              // Skip stylesheets that can't be accessed (CORS)
+            }
+          }
+        } catch (e) {
+          console.warn("Could not extract CSS rules:", e);
+        }
+
+        // Get inline styles
+        const inlineStyles = {};
+        if (element.style) {
+          for (let i = 0; i < element.style.length; i++) {
+            const prop = element.style[i];
+            inlineStyles[prop] = element.style.getPropertyValue(prop);
+          }
+        }
+
+        return {
+          tagName: element.tagName,
+          id: element.id,
+          className: element.className,
+          textContent: element.textContent?.substring(0, 100),
+          attributes: Array.from(element.attributes).map(attr => ({
+            name: attr.name,
+            value: attr.value
+          })),
+          dimensions: {
+            width: rect.width,
+            height: rect.height,
+            top: rect.top,
+            left: rect.left
+          },
+          computedStyles: computedStyles,
+          inlineStyles: inlineStyles,
+          appliedCSSRules: appliedRules.sort((a, b) => b.specificity.total - a.specificity.total)
+        };
+      }
+
+      // Helper function to calculate CSS specificity
+      function getSpecificity(selector) {
+        try {
+          let ids = (selector.match(/#[a-z0-9_-]+/gi) || []).length;
+          let classes = (selector.match(/\\.[a-z0-9_-]+/gi) || []).length;
+          let attributes = (selector.match(/\\[[^\\]]+\\]/gi) || []).length;
+          let pseudoClasses = (selector.match(/:[a-z0-9_-]+/gi) || []).length;
+          let elements = (selector.match(/^[a-z0-9]+|\\s+[a-z0-9]+/gi) || []).length;
+          
+          return {
+            ids: ids,
+            classes: classes + attributes + pseudoClasses,
+            elements: elements,
+            total: ids * 100 + (classes + attributes + pseudoClasses) * 10 + elements
+          };
+        } catch (e) {
+          return { ids: 0, classes: 0, elements: 0, total: 0 };
+        }
+      }
+
+      // Get selected element styles
+      const selectedElementData = getElementStyles(el);
+      selectedElementData.innerHTML = el.innerHTML;
+
+      // Get all children elements and their styles
+      const childrenData = [];
+      const allChildren = el.querySelectorAll('*'); // Get all descendant elements
+      
+      // Limit to prevent overwhelming data - get first 20 children
+      const childrenToProcess = Array.from(allChildren).slice(0, 20);
+      
+      for (const child of childrenToProcess) {
+        const childData = getElementStyles(child);
+        
+        // Add relationship info
+        childData.relationship = {
+          depth: getElementDepth(child, el),
+          directParent: child.parentElement === el,
+          path: getElementPath(child, el)
+        };
+        
+        childrenData.push(childData);
+      }
+
+      // Helper to get element depth relative to selected element
+      function getElementDepth(element, root) {
+        let depth = 0;
+        let current = element.parentElement;
+        while (current && current !== root) {
+          depth++;
+          current = current.parentElement;
+        }
+        return depth;
+      }
+
+      // Helper to get element path from root
+      function getElementPath(element, root) {
+        const path = [];
+        let current = element;
+        while (current && current !== root) {
+          const siblings = Array.from(current.parentElement.children);
+          const index = siblings.indexOf(current);
+          path.unshift({
+            tagName: current.tagName,
+            index: index,
+            className: current.className,
+            id: current.id
+          });
+          current = current.parentElement;
+        }
+        return path;
+      }
+
+      return {
+        selectedElement: selectedElementData,
+        children: childrenData,
+        summary: {
+          totalChildren: allChildren.length,
+          capturedChildren: childrenData.length,
+          maxDepth: Math.max(...childrenData.map(c => c.relationship.depth), 0)
+        }
+      };
+    })()`,
+    (result, isException) => {
+      if (isException || !result) return;
+
+      console.log("Element with children styles captured:", result);
+
+      // Send to browser connector
+      sendToBrowserConnector({
+        type: "selected-element-with-children-styles",
+        timestamp: Date.now(),
+        elementWithChildren: result,
+      });
+    }
+  );
+}
+
 // Listen for element selection in the Elements panel
 chrome.devtools.panels.elements.onSelectionChanged.addListener(() => {
   captureAndSendElement();
@@ -1212,6 +1384,9 @@ async function setupWebSocket() {
         } else if (message.type === "get-selected-element-styles-only") {
           console.log("Chrome Extension: Received request for selected element styles only");
           captureAndSendElementStylesOnly();
+        } else if (message.type === "get-selected-element-with-children-styles") {
+          console.log("Chrome Extension: Received request for selected element with children styles");
+          captureAndSendElementWithChildrenStyles();
         } else if (message.type === "get-current-url") {
           console.log("Chrome Extension: Received request for current URL");
 
